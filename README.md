@@ -149,7 +149,7 @@ The DeepResearch platform is designed for **scientific researchers, clinical pra
       ▼
 [Backend API]
       │
-   6. │ Firestore poll detects state change ➔ Emits SSE data packet
+   6. │ Task state update detected in Firestore ➔ Emits SSE data packet
       ▼
 [User Browser]
       │
@@ -603,11 +603,9 @@ At sufficiently high concurrency, worker instance limits, Cloud Tasks dispatch l
 ### Current Limitations:
 1. **Linear Synthesis Latency**: Generating chapters sequentially means total synthesis latency scales linearly with the number of sub-questions ($O(N)$), as each chapter waits for prior state context.
 2. **Fixed-Depth Planning**: Plans generate 1–7 sub-questions at the outset without multi-turn iterative search loops.
-3. **SSE Polling on Backend**: Backend checks Firestore on a 1-second interval rather than using Firestore `onSnapshot` event listeners.
-4. **Sequential Audio Synthesis**: Speech audio concatenates individual turn MP3 buffers sequentially rather than using a streaming multi-speaker dialogue API.
+3. **Sequential Audio Synthesis**: Speech audio concatenates individual turn MP3 buffers sequentially rather than using a streaming multi-speaker dialogue API.
 
 ### Future Improvements:
-- [ ] **Firestore `onSnapshot`**: Replace 1-second backend polling in `routes/task/index.ts` with native Firestore snapshot listeners.
 - [ ] **Iterative Deep Retrieval**: Allow the model to execute follow-up queries based on gaps identified in earlier chapters.
 - [ ] **Redis Search Cache**: Cache canonical Valyu search responses to avoid redundant retrieval calls.
 

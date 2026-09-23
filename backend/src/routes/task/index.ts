@@ -34,6 +34,12 @@ router.post(["/create-task", "/tasks"], async (req, res) => {
 router.get(["/task/:id", "/tasks/:id"], async (req, res) => {
   const { id } = req.params;
 
+  if (typeof id !== "string") {
+    return res.status(400).json({
+      error: "Task ID is required",
+    });
+  }
+
   const task = await getTask(id);
   if (!task) {
     return res.status(404).json({
@@ -154,7 +160,9 @@ router.get("/task/:id/events", async (req, res) => {
       const currentJson = JSON.stringify(taskData);
       if (currentJson !== lastDataJson) {
         lastDataJson = currentJson;
-        console.log(`[SSE] Emitted update for task ${id}: status=${taskData.status}, stage=${taskData.currentStage}, progress=${taskData.progress}%`);
+        console.log(
+          `[SSE] Emitted update for task ${id}: status=${taskData.status}, stage=${taskData.currentStage}, progress=${taskData.progress}%`,
+        );
         res.write(`data: ${currentJson}\n\n`);
       } else {
         res.write(": keepalive\n\n");
