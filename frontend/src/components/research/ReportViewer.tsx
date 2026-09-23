@@ -13,7 +13,6 @@ import {
   ListTree,
   Clock,
   Quote,
-  Sparkles,
   X,
   Coins,
   Brain,
@@ -160,11 +159,9 @@ export function ReportViewer({ task, onPodcastRequested }: ReportViewerProps) {
     const text = task.report ?? ''
     const words = text.trim() ? text.trim().split(/\s+/).length : 0
     const readTimeMin = Math.max(1, Math.ceil(words / 220))
-    const mathCount = (text.match(/\$+/g) || []).length / 2
     return {
       words,
       readTimeMin,
-      equations: Math.floor(mathCount),
     }
   }, [task.report])
 
@@ -419,12 +416,6 @@ export function ReportViewer({ task, onPodcastRequested }: ReportViewerProps) {
                 <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
                 <span>{citations.length} cited sources</span>
               </span>
-              {metrics.equations > 0 && (
-                <span className="flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  <span>{metrics.equations} equations</span>
-                </span>
-              )}
               {task.cost && (
                 <div className="relative group/cost ml-auto">
                   <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[11px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 cursor-help">
