@@ -1,0 +1,56 @@
+name: Deploy Worker
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "worker/**"
+      - ".github/workflows/deploy-worker.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: valyu-509317
+  REGION: europe-west1
+  SERVICE_NAME: valyu-worker
+  REPOSITORY: valyu
+  IMAGE: europe-west1-docker.pkg.dev/valyu-509317/valyu/worker
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/698620738296/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: github-deployer@valyu-509317.iam.gserviceaccount.com
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
+
+      - name: Build Docker image
+        run: docker build -t $IMAGE:$GITHUB_SHA ./worker
+
+      - name: Push Docker image
+        run: docker push $IMAGE:$GITHUB_SHA
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy $SERVICE_NAME \
+            --image $IMAGE:$GITHUB_SHA \
+            --region $REGION \
+            --project $PROJECT_ID \
+            --service-account valyu-worker@valyu-509317.iam.gserviceaccount.com \
+            --port 3001 \
+            --no-allow-unauthenticated
