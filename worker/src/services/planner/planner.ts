@@ -1,7 +1,11 @@
 import OpenAI from "openai";
 import { experimental_evaluate as evaluate } from "ai";
 import { z } from "zod";
-import { calculateOpenAICost, calculateJevCost, roundCost } from "../../utils/cost.js";
+import {
+  calculateOpenAICost,
+  calculateJevCost,
+  roundCost,
+} from "../../utils/cost.js";
 import { withRetry, withTimeout } from "../../utils/concurrency.js";
 
 const client = new OpenAI({
@@ -12,7 +16,7 @@ const client = new OpenAI({
 
 const PLAN_THRESHOLD = 0.7;
 const MAX_PLAN_REVISIONS = 1;
-const JEV_TIMEOUT_MS = 30_000;
+const JEV_TIMEOUT_MS = 70_000;
 
 const PlannerSchema = z.object({
   researchQuestions: z
@@ -68,21 +72,47 @@ async function createDraftPlan(
           content: `
 You are a research planning assistant.
 
-Given a user's research question, identify the minimum
-sufficient set of non-redundant research questions needed
-to answer it comprehensively.
+Given a user's research question, design the minimum sufficient set of
+non-redundant research questions needed to answer it comprehensively.
+
+The goal is NOT to create several differently-worded versions of the same
+question. Each research question must investigate a meaningfully different
+angle of the overall problem so that later deep-dive synthesis sections
+have distinct scopes and do not repeat the same background, definitions,
+or findings.
 
 Rules:
 - Generate at least 1 and at most 7 research questions.
 - 7 is an absolute maximum, not a target.
 - Do not generate questions just to reach 7.
-- Use fewer questions when sufficient.
+- Use fewer questions when they provide sufficient coverage.
 - Each question must cover a distinct information dimension.
-- Questions should collectively cover the original question.
+- Questions must be substantially different in PURPOSE, not merely wording.
+- Avoid overlapping questions that would retrieve the same evidence.
+- Avoid repeating the same concepts, mechanisms, populations, outcomes,
+  historical background, or comparisons across multiple questions.
+- The questions should collectively cover the original research question.
+- Think about the research from different complementary angles where relevant,
+  such as:
+    * definitions and scope
+    * mechanisms or underlying principles
+    * current evidence and empirical findings
+    * competing approaches or comparisons
+    * limitations, failure modes, and controversies
+    * real-world applications or clinical/technical implications
+    * historical development or evolution
+    * future directions and open problems
+  Only use an angle when it is genuinely relevant to the original question.
+- Prefer questions that naturally build on one another rather than questions
+  that independently re-explain the entire topic.
+- A later question should be able to assume that earlier questions already
+  established their relevant background.
+- Do not ask every question to provide a general overview.
 - Do not answer the questions.
 - Do not generate search queries.
-- Do not recommend sources.${focusPrompt}
-          `,
+- Do not recommend sources.
+${focusPrompt}
+`,
         },
         {
           role: "user",
@@ -204,39 +234,57 @@ export async function generateResearchPlan(
       )
       .join("\n\n");
 
-    const review = await withRetry(() =>
-      withTimeout(
-        evaluate({
-          model: "typesafe-ai/jev",
-          state: `
+    let review;
+    try {
+      review = await withRetry(
+        () =>
+          withTimeout(
+            evaluate({
+              model: "typesafe-ai/jev",
+              state: `
 Original research question:
 ${researchQuestion}
 
 Generated research plan:
 ${questions}
 `,
-          questions: {
-            planRelevant: {
-              type: "boolean",
-              instructions:
-                "Is this research plan relevant to and capable of addressing the original research question?",
-            },
-            nonRedundant: {
-              type: "boolean",
-              instructions:
-                "Are the research questions sufficiently distinct and non-redundant?",
-            },
-            sufficient: {
-              type: "boolean",
-              instructions:
-                "Does the plan cover the important dimensions needed to answer the original research question?",
-            },
-          },
-        }),
-        JEV_TIMEOUT_MS,
-        "Jev evaluation",
-      ),
-    );
+              questions: {
+                planRelevant: {
+                  type: "boolean",
+                  instructions:
+                    "Is this research plan relevant to and capable of addressing the original research question?",
+                },
+                nonRedundant: {
+                  type: "boolean",
+                  instructions:
+                    "Are the research questions sufficiently distinct and non-redundant?",
+                },
+                sufficient: {
+                  type: "boolean",
+                  instructions:
+                    "Does the plan cover the important dimensions needed to answer the original research question?",
+                },
+              },
+            }),
+            JEV_TIMEOUT_MS,
+            "Jev evaluation",
+          ),
+        2,
+        1000,
+      );
+    } catch (error) {
+      console.warn(
+        `[Jev] Plan evaluation unavailable. Proceeding with initial plan.`,
+        error instanceof Error ? error.message : error,
+      );
+      return {
+        plan,
+        cost: {
+          openai: roundCost(openaiCost),
+          jev: roundCost(jevCost),
+        },
+      };
+    }
 
     jevCost += calculateJevCost(review.usage);
 
@@ -277,7 +325,12 @@ ${questions}
         `Research plan failed validation (attempt ${revision + 1}/${MAX_PLAN_REVISIONS + 1}). Revising plan with feedback...`,
         issues,
       );
-      const revised = await reviseResearchPlan(researchQuestion, plan, issues, searchType);
+      const revised = await reviseResearchPlan(
+        researchQuestion,
+        plan,
+        issues,
+        searchType,
+      );
       plan = revised.plan;
       openaiCost += revised.cost;
     } else {

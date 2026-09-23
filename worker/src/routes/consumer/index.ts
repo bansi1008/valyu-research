@@ -2,7 +2,7 @@ import express from "express";
 import { getTask } from "./helper/getTask.js";
 import { processTask } from "../../services/task/processTask.js";
 import { processPodcastTask } from "../../services/podcast/processPodcastTask.js";
-
+import { testResearch } from "../../services/task/testResearch.js";
 const router = express.Router();
 
 router.post("/process", async (req, res) => {
@@ -51,7 +51,8 @@ router.post("/process", async (req, res) => {
       });
     } catch (error) {
       return res.status(500).json({
-        error: error instanceof Error ? error.message : "Podcast processing failed",
+        error:
+          error instanceof Error ? error.message : "Podcast processing failed",
       });
     }
   }

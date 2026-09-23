@@ -34,10 +34,10 @@ export interface StageUpdateOptions {
 const DEFAULT_STAGE_PROGRESS: Record<TaskStage, number> = {
   queued: 0,
   running: 5,
-  planning: 15,
-  searching: 35,
-  evidence_review: 55,
-  synthesising: 75,
+  planning: 20,
+  searching: 45,
+  evidence_review: 65,
+  synthesising: 85,
   validating: 90,
   completed: 100,
   failed: 100,
@@ -53,11 +53,14 @@ export async function updateTaskStage(
 
   const updateData: Record<string, unknown> = {
     status: isTerminal ? stage : "running",
-    currentStage: stage,
-    progress,
     updatedAt: new Date(),
     ...options,
   };
+
+  if (stage !== "failed") {
+    updateData.currentStage = stage;
+    updateData.progress = progress;
+  }
 
   await taskRef.update(updateData);
 }

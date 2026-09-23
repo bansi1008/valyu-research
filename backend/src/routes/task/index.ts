@@ -10,7 +10,7 @@ import type { Task } from "../../types/task.js";
 
 const router = Router();
 
-router.post("/create-task", async (req, res) => {
+router.post(["/create-task", "/tasks"], async (req, res) => {
   const { question, searchType } = req.body;
 
   if (!question || typeof question !== "string") {
@@ -19,7 +19,10 @@ router.post("/create-task", async (req, res) => {
     });
   }
 
-  const taskId = await createTask(question, typeof searchType === "string" ? searchType : "all");
+  const taskId = await createTask(
+    question,
+    typeof searchType === "string" ? searchType : "all",
+  );
 
   await enqueueResearchTask(taskId);
 
@@ -28,7 +31,7 @@ router.post("/create-task", async (req, res) => {
   });
 });
 
-router.get("/task/:id", async (req, res) => {
+router.get(["/task/:id", "/tasks/:id"], async (req, res) => {
   const { id } = req.params;
 
   const task = await getTask(id);
@@ -108,7 +111,7 @@ router.post("/task/:id/podcast", async (req, res) => {
   });
 });
 
-router.get("/task/:id/events", (req, res) => {
+router.get("/task/:id/events", async (req, res) => {
   const { id } = req.params;
 
   if (!id || typeof id !== "string") {
@@ -120,14 +123,22 @@ router.get("/task/:id/events", (req, res) => {
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
+  res.socket?.setNoDelay(true);
   res.flushHeaders();
 
+  res.write(":" + " ".repeat(2048) + "\n\n");
   res.write(": ping\n\n");
 
   const taskRef = db.collection("tasks").doc(id);
 
-  const unsubscribe = taskRef.onSnapshot(
-    (snapshot) => {
+  let isClosed = false;
+  let lastDataJson = "";
+  let interval: ReturnType<typeof setInterval> | undefined;
+
+  const checkAndUpdate = async () => {
+    if (isClosed) return;
+    try {
+      const snapshot = await taskRef.get();
       if (!snapshot.exists) {
         res.write(
           `event: error\ndata: ${JSON.stringify({ error: "Task not found" })}\n\n`,
@@ -140,7 +151,14 @@ router.get("/task/:id/events", (req, res) => {
         ...snapshot.data(),
       } as Task;
 
-      res.write(`data: ${JSON.stringify(taskData)}\n\n`);
+      const currentJson = JSON.stringify(taskData);
+      if (currentJson !== lastDataJson) {
+        lastDataJson = currentJson;
+        console.log(`[SSE] Emitted update for task ${id}: status=${taskData.status}, stage=${taskData.currentStage}, progress=${taskData.progress}%`);
+        res.write(`data: ${currentJson}\n\n`);
+      } else {
+        res.write(": keepalive\n\n");
+      }
 
       const isResearchDone =
         taskData.status === "completed" || taskData.status === "failed";
@@ -151,22 +169,24 @@ router.get("/task/:id/events", (req, res) => {
           taskData.podcast.status === "generating_audio");
 
       if (isResearchDone && !isPodcastActive) {
-        unsubscribe();
+        isClosed = true;
+        if (interval) clearInterval(interval);
         res.end();
       }
-    },
-    (error) => {
-      console.error(`[SSE] Snapshot listener error for task ${id}:`, error);
-      res.write(
-        `event: error\ndata: ${JSON.stringify({ error: "Listener error" })}\n\n`,
-      );
-      unsubscribe();
-      res.end();
-    },
-  );
+    } catch (err) {
+      console.error(`[SSE] Error checking task ${id}:`, err);
+    }
+  };
+
+  await checkAndUpdate();
+
+  if (!isClosed) {
+    interval = setInterval(checkAndUpdate, 1000);
+  }
 
   req.on("close", () => {
-    unsubscribe();
+    isClosed = true;
+    if (interval) clearInterval(interval);
   });
 });
 

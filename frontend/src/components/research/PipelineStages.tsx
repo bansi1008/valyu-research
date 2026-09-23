@@ -9,6 +9,7 @@ import {
   XCircle,
   Check,
   X,
+  AlertTriangle,
 } from 'lucide-react'
 import type { Task, TaskStatus } from '../../types/task'
 import { PIPELINE_STAGES, STAGE_INFO, getEffectiveStage, getStageIndex } from '../../types/task'
@@ -74,7 +75,7 @@ export function PipelineStages({ task }: PipelineStagesProps) {
       <div className="mb-10">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm" style={{ color: 'var(--text-2)' }}>
-            {isFailed ? 'Research failed' : (STAGE_INFO[effective]?.description ?? 'Processing…')}
+            {isFailed ? `Failed during ${STAGE_INFO[effective]?.label ?? 'Processing'}` : (STAGE_INFO[effective]?.description ?? 'Processing…')}
           </span>
           <span
             className="text-sm font-bold tabular-nums"
@@ -170,6 +171,9 @@ export function PipelineStages({ task }: PipelineStagesProps) {
                   {s === 'done' && (
                     <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>done</span>
                   )}
+                  {s === 'failed' && (
+                    <span className="text-[11px] font-semibold text-rose-400">failed</span>
+                  )}
                 </div>
                 {s !== 'pending' && (
                   <p className="text-[12px] mt-0.5 leading-snug" style={{ color: 'var(--text-3)' }}>
@@ -184,13 +188,25 @@ export function PipelineStages({ task }: PipelineStagesProps) {
 
       {isFailed && task.error && (
         <div
-          className="mt-4 p-4 rounded-xl border fade-up"
-          style={{ background: 'rgba(248,113,113,0.08)', borderColor: 'rgba(248,113,113,0.20)' }}
+          className="mt-6 p-4 rounded-2xl border fade-up theme-surface shadow-md"
+          style={{ background: 'rgba(248,113,113,0.06)', borderColor: 'rgba(248,113,113,0.22)' }}
         >
-          <p className="text-sm font-semibold text-rose-400 mb-1">Error Details</p>
-          <p className="text-sm font-mono leading-relaxed" style={{ color: 'rgba(248,113,113,0.75)' }}>
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+            <p className="text-sm font-semibold text-rose-400">
+              Error Details ({STAGE_INFO[effective]?.label ?? 'Research'} Stage)
+            </p>
+          </div>
+          <div
+            className="p-3.5 rounded-xl text-xs font-mono leading-relaxed break-words"
+            style={{
+              background: 'rgba(0, 0, 0, 0.25)',
+              color: '#fca5a5',
+              border: '1px solid rgba(248, 113, 113, 0.15)',
+            }}
+          >
             {task.error}
-          </p>
+          </div>
         </div>
       )}
     </div>

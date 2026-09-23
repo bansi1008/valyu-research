@@ -12,56 +12,60 @@ export function useTaskPolling(taskId: string | null) {
   const [error, setError] = useState<string | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
 
-  const connectSSE = useCallback((id: string) => {
+  const closeSSE = useCallback(() => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close()
       eventSourceRef.current = null
     }
-
-    const url = `${API_BASE}/api/task/${id}/events`
-    const es = new EventSource(url)
-    eventSourceRef.current = es
-
-    es.onmessage = (event) => {
-      try {
-        const taskData = JSON.parse(event.data) as Task
-        setTask(taskData)
-        setError(null)
-        setLoading(false)
-
-        const isResearchDone = TERMINAL.includes(taskData.status)
-        const isPodcastActive = taskData.podcast && ACTIVE_PODCAST.includes(taskData.podcast.status)
-
-        if (isResearchDone && !isPodcastActive) {
-          es.close()
-          eventSourceRef.current = null
-        }
-      } catch {}
-    }
-
-    es.onerror = () => {
-      fetchTask(id)
-        .then((fallback) => {
-          setTask(fallback)
-          const isResearchDone = TERMINAL.includes(fallback.status)
-          const isPodcastActive = fallback.podcast && ACTIVE_PODCAST.includes(fallback.podcast.status)
-          if (isResearchDone && !isPodcastActive && eventSourceRef.current) {
-            eventSourceRef.current.close()
-            eventSourceRef.current = null
-          }
-        })
-        .catch((e) => {
-          setError(e instanceof Error ? e.message : 'Stream disconnected')
-        })
-    }
   }, [])
+
+  const handleTaskUpdate = useCallback(
+    (taskData: Task) => {
+      setTask(taskData)
+      setError(null)
+      setLoading(false)
+
+      const isResearchDone = TERMINAL.includes(taskData.status)
+      const isPodcastActive = taskData.podcast && ACTIVE_PODCAST.includes(taskData.podcast.status)
+
+      if (isResearchDone && !isPodcastActive) {
+        closeSSE()
+      }
+    },
+    [closeSSE],
+  )
+
+  const connectSSE = useCallback(
+    (id: string) => {
+      closeSSE()
+
+      const url = `${API_BASE}/api/task/${id}/events`
+      const es = new EventSource(url)
+      eventSourceRef.current = es
+
+      es.onmessage = (event) => {
+        try {
+          const taskData = JSON.parse(event.data) as Task
+          handleTaskUpdate(taskData)
+        } catch {}
+      }
+
+      es.onerror = () => {
+        fetchTask(id)
+          .then((fallback) => {
+            handleTaskUpdate(fallback)
+          })
+          .catch((e) => {
+            setError(e instanceof Error ? e.message : 'Stream disconnected')
+          })
+      }
+    },
+    [closeSSE, handleTaskUpdate],
+  )
 
   useEffect(() => {
     if (!taskId) {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close()
-        eventSourceRef.current = null
-      }
+      closeSSE()
       setTask(null)
       setError(null)
       setLoading(false)
@@ -73,28 +77,19 @@ export function useTaskPolling(taskId: string | null) {
     setError(null)
 
     connectSSE(taskId)
+
     fetchTask(taskId)
       .then((initialTask) => {
-        setTask((prev) => prev ?? initialTask)
-        setLoading(false)
-        const isResearchDone = TERMINAL.includes(initialTask.status)
-        const isPodcastActive = initialTask.podcast && ACTIVE_PODCAST.includes(initialTask.podcast.status)
-        if (isResearchDone && !isPodcastActive && eventSourceRef.current) {
-          eventSourceRef.current.close()
-          eventSourceRef.current = null
-        }
+        handleTaskUpdate(initialTask)
       })
       .catch(() => {
         setLoading(false)
       })
 
     return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close()
-        eventSourceRef.current = null
-      }
+      closeSSE()
     }
-  }, [taskId, connectSSE])
+  }, [taskId, connectSSE, handleTaskUpdate, closeSSE])
 
   const reconnect = useCallback(() => {
     if (taskId) {

@@ -10,7 +10,7 @@ export function normalizeSources(research: any[]): ResearchSource[] {
         citationNumber: 0,
         title: result.title,
         url: result.url,
-        content: result.content ?? "",
+        content: result.content || result.abstract || "",
 
         source: result.source,
         sourceType: result.source_type,

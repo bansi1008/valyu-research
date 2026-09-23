@@ -121,16 +121,16 @@ export const STAGE_INFO: Record<TaskStatus, StageInfo> = {
     bgColor: 'rgba(34, 211, 238, 0.12)',
   },
   synthesising: {
-    label: 'Synthesising',
-    description: 'Crafting your cited research report',
+    label: 'Synthesis & Validation',
+    description: 'Generating chapters & verifying citations with Jev',
     color: '#a78bfa',
     bgColor: 'rgba(167, 139, 250, 0.12)',
   },
   validating: {
-    label: 'Validating',
-    description: 'Verifying citations and cross-checking claims',
-    color: '#fbbf24',
-    bgColor: 'rgba(251, 191, 36, 0.12)',
+    label: 'Synthesis & Validation',
+    description: 'Generating chapters & verifying citations with Jev',
+    color: '#a78bfa',
+    bgColor: 'rgba(167, 139, 250, 0.12)',
   },
   completed: {
     label: 'Completed',
@@ -152,13 +152,16 @@ export const PIPELINE_STAGES: TaskStatus[] = [
   'searching',
   'evidence_review',
   'synthesising',
-  'validating',
   'completed',
 ]
 
 export function getEffectiveStage(task: Task): TaskStatus {
-  if (task.status === 'running') {
-    return task.currentStage ?? 'planning'
+  if (task.status === 'running' || task.status === 'failed') {
+    if (task.currentStage && task.currentStage !== 'failed') {
+      if (task.currentStage === 'validating') return 'synthesising'
+      return task.currentStage
+    }
+    return 'searching'
   }
   return task.status
 }

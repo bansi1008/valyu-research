@@ -12,8 +12,8 @@ export interface PodcastCost {
 }
 
 export const OPENAI_PRICING = {
-  inputPerMillion: 2.50, 
-  outputPerMillion: 10.00, 
+  inputPerMillion: 2.00, 
+  outputPerMillion: 12.00, 
 };
 
 export const TTS_PRICING = {
@@ -21,7 +21,7 @@ export const TTS_PRICING = {
 };
 
 export const JEV_PRICING = {
-  inputPerMillion: 1.50, 
+  inputPerMillion: 0.042, 
   outputPerMillion: 0.00, 
   fallbackPerEval: 0.002, 
 };

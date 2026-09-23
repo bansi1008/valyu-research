@@ -33,7 +33,7 @@ export async function retrieveResearch(
         () =>
           searchValyu(researchQuestion.question, {
             searchType: effectiveSearchType,
-            maxNumResults: 10,
+            maxNumResults: 20,
             includeAbstracts: true,
           }),
         3,

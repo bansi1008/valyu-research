@@ -4,7 +4,7 @@ import { getDeduplicationKey } from "./deduplicateSources.js";
 
 export function selectEvidence(
   evidence: ResearchEvidence[],
-  maxSourcesPerQuestion = 5,
+  maxSourcesPerQuestion = 10,
 ): ResearchEvidence[] {
 
   const selected: ResearchEvidence[] = evidence.map((item) => ({

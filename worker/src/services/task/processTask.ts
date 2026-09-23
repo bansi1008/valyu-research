@@ -85,8 +85,7 @@ export async function processTask(taskId: string) {
     const reportResult = await generateReport(result.question, selectedEvidence);
     const report = reportResult.report;
     const synthesisOpenaiCost = reportResult.openaiCost;
-
-    await updateTaskStage(taskRef, "validating");
+    const synthesisJevCost = reportResult.jevCost;
 
     const citationSources = selectedEvidence.flatMap((item) => item.sources);
 
@@ -103,7 +102,7 @@ export async function processTask(taskId: string) {
     const cost: TaskCost = aggregateTaskCost({
       valyu: valyuCost,
       openai: plannerOpenaiCost + synthesisOpenaiCost,
-      jev: plannerJevCost,
+      jev: plannerJevCost + synthesisJevCost,
     });
 
     console.log(`Task ${taskId} completed with cost summary:`, cost);

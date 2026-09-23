@@ -41,6 +41,7 @@ app.get("/health", async (_req, res) => {
 });
 
 app.use("/api", taskRoutes);
+app.use("/", taskRoutes);
 
 const port = process.env.PORT || 3000;
 
