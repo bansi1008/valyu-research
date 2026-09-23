@@ -1,0 +1,69 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Environment & Credentials
+.env
+.env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+!.env.example
+*.pem
+*.key
+*.cert
+service-account*.json
+firebase-adminsdk*.json
+
+# Generated Audio Files & Media Artifacts
+audio/
+worker/audio/
+*.mp3
+*.wav
+*.m4a
+*.ogg
+openai-test.mp3
+
+# Temporary / Local Design Images
+val-*.png
+val-*.jpeg
+val-*.jpg
+
+# Production Builds & Outputs
+dist/
+dist-ssr/
+build/
+.next/
+out/
+.vercel/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# IDE & Editor Files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+
+# Agent & Cache Directories
+.gemini/
+.agents/
+.turbo/
+.cache/
+tsconfig.tsbuildinfo
+*.tsbuildinfo
