@@ -1,7 +1,6 @@
 import { useState, useRef, type KeyboardEvent } from 'react'
 import {
   ArrowRight,
-  FlaskConical,
   BookOpen,
   Microscope,
   Database,

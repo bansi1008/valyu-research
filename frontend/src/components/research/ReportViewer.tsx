@@ -19,11 +19,9 @@ import {
   Quote,
   ChevronDown,
   Sparkles,
-  Layers,
   X,
   Coins,
-  Brain,
-  Headphones
+  Brain
 } from 'lucide-react'
 import type { Task, Citation } from '../../types/task'
 import { requestPodcast } from '../../api/client'

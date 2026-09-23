@@ -18,7 +18,7 @@ interface PipelineStagesProps {
   task: Task
 }
 
-const ICONS: Record<TaskStatus, React.ComponentType<{ className?: string }>> = {
+const ICONS: Record<TaskStatus, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
   queued:          Clock,
   running:         Spinner as never,
   planning:        Brain,
