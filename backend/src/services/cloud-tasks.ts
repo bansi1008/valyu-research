@@ -20,6 +20,10 @@ export async function enqueueTask(payload: TaskQueuePayload) {
       headers: {
         "Content-Type": "application/json",
       },
+      oidcToken: {
+        serviceAccountEmail:
+          "valyu-worker@valyu-509317.iam.gserviceaccount.com",
+      },
       body: Buffer.from(JSON.stringify(payload)).toString("base64"),
     },
   };

@@ -23,9 +23,11 @@ export interface PodcastCost {
 
 export interface PodcastInfo {
   status: PodcastStatus;
+  audioPath?: string | null;
   audioUrl?: string | null;
   durationSeconds?: number | null;
   cost?: PodcastCost | null;
+  generatedAt?: Date | null;
   error?: string | null;
 }
 

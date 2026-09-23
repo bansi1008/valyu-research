@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { db } from "../../dbconfig/db.js";
 import { generatePodcastScript } from "./generatePodcastScript.js";
 import { synthesizeDialogueAudio } from "./synthesizePodcastAudio.js";
+import { uploadPodcastAudio } from "../storage/audioStorage.js";
 import { roundCost } from "../../utils/cost.js";
 
 const ROOT_AUDIO_DIR = resolve(process.cwd(), "..", "audio");
@@ -40,30 +41,32 @@ export async function processPodcastTask(taskId: string): Promise<void> {
 
     const audioResult = await synthesizeDialogueAudio(scriptResult.script.turns);
 
-    await mkdir(ROOT_AUDIO_DIR, { recursive: true });
-    const localFilePath = join(ROOT_AUDIO_DIR, `${taskId}.mp3`);
-    await writeFile(localFilePath, audioResult.buffer);
-    console.log(`[Podcast] Saved MP3 to root disk folder: ${localFilePath}`);
+    if (process.env.NODE_ENV !== "production") {
+      try {
+        await mkdir(ROOT_AUDIO_DIR, { recursive: true });
+        const localFilePath = join(ROOT_AUDIO_DIR, `${taskId}.mp3`);
+        await writeFile(localFilePath, audioResult.buffer);
+      } catch {}
+    }
 
-    const audioUrl = `/api/audio/${taskId}.mp3`;
+    const uploadResult = await uploadPodcastAudio(taskId, audioResult.buffer);
+
     const podcastCost = {
       script: scriptResult.cost,
       tts: audioResult.cost,
       total: roundCost(scriptResult.cost + audioResult.cost),
     };
 
-    console.log(`[Podcast] Podcast completed with cost:`, podcastCost);
-
     await taskRef.update({
       "podcast.status": "completed",
-      "podcast.audioUrl": audioUrl,
+      "podcast.audioPath": uploadResult.audioPath,
+      "podcast.audioUrl": uploadResult.audioUrl,
       "podcast.durationSeconds": audioResult.durationSeconds,
       "podcast.cost": podcastCost,
+      "podcast.generatedAt": new Date(),
       "podcast.error": null,
       updatedAt: new Date(),
     });
-
-    console.log(`[Podcast] Task ${taskId} podcast saved to disk and metadata updated in Firestore.`);
   } catch (error) {
     console.error(`[Podcast] Task ${taskId} podcast generation failed:`, error);
     const errorMessage =
