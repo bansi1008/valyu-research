@@ -53,4 +53,5 @@ jobs:
             --project $PROJECT_ID \
             --service-account valyu-worker@valyu-509317.iam.gserviceaccount.com \
             --port 3001 \
-            --no-allow-unauthenticated
+            --no-allow-unauthenticated \
+            --set-secrets OPENAI_API_KEY=OPENAI_API_KEY:latest,VALYU_API_KEY=VALYU_API_KEY:latest,AI_GATEWAY_API_KEY=AI_GATEWAY_API_KEY:latest
