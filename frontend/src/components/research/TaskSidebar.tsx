@@ -1,4 +1,4 @@
-import { X, History } from 'lucide-react'
+import { X, FlaskConical, History } from 'lucide-react'
 import type { TaskHistoryItem } from '../../types/task'
 import { TaskCard } from './TaskCard'
 

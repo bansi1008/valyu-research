@@ -1,4 +1,4 @@
-import { Clock, CheckCircle, XCircle, ChevronRight } from 'lucide-react'
+import { Clock, CheckCircle, XCircle, Loader, ChevronRight } from 'lucide-react'
 import type { TaskHistoryItem, TaskStatus } from '../../types/task'
 import { STAGE_INFO } from '../../types/task'
 import { cn } from '../../utils/cn'
