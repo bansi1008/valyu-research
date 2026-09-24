@@ -280,6 +280,34 @@ interface ResearchState {
 - Subsequent chapters receive established terms in their prompt with explicit instructions not to re-define them.
 - Sections cross-reference previously established empirical findings naturally.
 
+### Concrete Before vs. After Example
+
+The sequential shared-memory accumulator directly prevents the introductory re-definition loop common in naive multi-agent report synthesis:
+
+#### ❌ Before: Parallel Map-Reduce (Independent Generation)
+Each chapter is drafted in isolation with only its own sub-question and evidence:
+- **Chapter 1**: *"Glucagon-like peptide-1 receptor (GLP-1R) agonists, initially developed for type 2 diabetes mellitus, have demonstrated significant neuroprotective efficacy..."*
+- **Chapter 2**: *"GLP-1 receptor agonists are a class of metabolic drugs that bind the GLP-1 receptor. In the central nervous system, these agents reduce neuroinflammation..."*
+- **Chapter 3**: *"Glucagon-like peptide-1 (GLP-1) analogues are incretin mimetics now widely investigated for neurodegenerative diseases. Neuronal bioenergetics are improved..."*
+
+*Drawback*: Every chapter independently re-introduces the baseline premise, repeats synonymous definitions, and fails to build conceptually upon prior sections.
+
+#### ✅ After: Sequential Shared-Memory Accumulator (`ResearchState`)
+Chapter 1 establishes baseline pharmacology and blood-brain barrier transport, committing them to `ResearchState`:
+
+```text
+ResearchState
+├── coveredTopics: ["Blood-Brain Barrier Penetration", "Pharmacokinetics"]
+├── definitions: ["GLP-1R", "liraglutide", "semaglutide"]
+├── keyFindings: ["Diffusion across circumventricular organs and endothelial pinocytosis [4]"]
+└── avoidRepeating: ["Basic definition of GLP-1 receptor agonist", "DPP-4 plasma degradation"]
+```
+
+Chapter 2 receives this accumulated state in its prompt with explicit instructions not to re-define established terms. It begins directly with novel mechanistic analysis and naturally cross-references Chapter 1:
+- **Chapter 2**: *"Beyond the neurovascular transport established in Section 1, central GLP-1R activation directly attenuates microglial M1 polarization by suppressing NF-κB p65 nuclear translocation [3]..."*
+
+*Outcome*: Eliminates redundant introductory filler, avoids conflicting terminology, and maintains structural continuity across chapters.
+
 ---
 
 ## 🛡️ Quality Assurance: Jev Factual Quality Check & Repair
