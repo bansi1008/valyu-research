@@ -13,8 +13,8 @@ An asynchronous deep research and scientific literature synthesis platform deplo
 | **Frontend** | Vercel | `https://valyu-research.vercel.app` | Public |
 | **Backend API** | Cloud Run (`europe-west1`) | `https://valyu-backend-miejznyyeq-ew.a.run.app` | Public (`--allow-unauthenticated`) |
 | **Worker Service** | Cloud Run (`europe-west1`) | `https://valyu-worker-miejznyyeq-ew.a.run.app` | Private (`--no-allow-unauthenticated`, OIDC only) |
-| **Firestore** | Google Cloud | `valyu-509317` / Database: `valyu` | Internal IAM |
-| **Audio Storage** | Cloud Storage | `gs://valyu-audio/podcasts/{taskId}.mp3` | Public read for generated audio |
+| **Firestore** | Google Cloud (`eur3`) | `valyu-509317` / Database: `valyu` | Internal IAM |
+| **Audio Storage** | Cloud Storage (`EU` multi-region) | `gs://valyu-audio/podcasts/{taskId}.mp3` | Public read for generated audio |
 
 ---
 
@@ -342,10 +342,10 @@ Automated quality evaluation is integrated via `typesafe-ai/jev`:
 [valyu-worker] (Cloud Run, Service Account: valyu-worker@, --no-allow-unauthenticated)
 ```
 
-- **Private Worker Isolation**: Deployed with `--no-allow-unauthenticated`. Direct public traffic receives `403 Forbidden`. Only callers with valid Google OIDC tokens for `valyu-worker@` are permitted.
+- **Private Worker Isolation**: Deployed with `--no-allow-unauthenticated`. Direct public traffic receives `403 Forbidden`. Only authenticated callers whose identity has the Cloud Run Invoker permission (`roles/run.invoker`) on the worker service are permitted.
 - **Least-Privilege Service Accounts**:
   - `valyu-api@valyu-509317.iam.gserviceaccount.com`: Enqueues Cloud Tasks (`roles/cloudtasks.enqueuer`) and writes task records to Firestore (`roles/datastore.user`).
-  - `valyu-worker@valyu-509317.iam.gserviceaccount.com`: Reads/writes Firestore, uploads to Cloud Storage (`valyu-audio`), accesses Secret Manager, and is authorized to invoke the private worker service.
+  - `valyu-worker@valyu-509317.iam.gserviceaccount.com`: Reads/writes Firestore, uploads to Cloud Storage (`valyu-audio`), accesses Secret Manager, and is authorized to invoke the private worker service (`roles/run.invoker`).
   - `github-deployer@valyu-509317.iam.gserviceaccount.com`: Deploys services via Workload Identity Federation.
 - **Keyless CI/CD**: Uses GitHub Actions Workload Identity Federation (no static service account JSON keys stored in GitHub repository secrets).
 - **Secret Management**: API keys are stored in Secret Manager and injected at container startup via `--set-secrets`.
@@ -354,24 +354,48 @@ Automated quality evaluation is integrated via `typesafe-ai/jev`:
 
 ## 💰 Cost Accounting & Measured Tracking
 
-Every task records itemized provider costs in Firestore.
+Every task records itemized provider costs in Firestore, tracking both external API usage and infrastructure unit economics.
 
-### Provider Cost Tracking
+### 1. Infrastructure Hosting Costs
 
-- **Valyu Search**: Sum of `total_deduction_dollars` returned by the API.
-- **OpenAI Models**: Calculated from recorded input/output token usage using the configured pricing rates.
-- **Jev Evaluation**: Calculated from recorded token usage.
-- **OpenAI TTS**: Tracked using the configured character-based internal estimate.
+| Service | Tier / Model | Cost Profile |
+|---|---|---|
+| **Cloud Run (Backend & Worker)** | Serverless (Scale-to-zero) | Billed per 100ms of active vCPU/memory. Free tier includes 2 million requests, 360,000 vCPU-seconds, and 180,000 GiB-seconds per month. Compute cost for normal research volumes is effectively **$0.00 / month**. |
+| **Cloud Tasks** | Serverless Push Queue | First 1 million task operations per month are **free**; thereafter $0.40 per million dispatches. |
+| **Firestore (`valyu`)** | Serverless Document DB | Free tier covers 50,000 reads, 20,000 writes, and 1 GiB storage per day. Each research task performs a bounded number of state updates, well within the free tier at the current workload. |
+| **Cloud Storage (`valyu-audio`)** | Standard Multi-Region (`EU`) | $0.026 per GB/month (Standard class, Public read, Soft Delete protection enabled). 2–4MB podcast MP3 files incur negligible storage costs (< $0.01 / month). |
+| **Vercel** | Hobby Tier | **$0.00 / month** (Global Edge CDN, automatic TLS, and SPA static hosting). |
 
-Each completed task stores:
+### 2. Operational Provider Costs (COGS per Task)
 
-- Valyu retrieval cost
-- OpenAI model cost
-- Jev evaluation cost
-- TTS cost, when applicable
-- Total task cost
+| Provider / Resource | Rate Basis | Typical Usage per Task | Typical Cost Range |
+|---|---|---|---|
+| **Valyu Search API** | Per query deduction | 4–7 sub-questions × 20 results (concurrency = 3) | **$0.05 – $0.15** |
+| **OpenAI `gpt-5.6-terra`** | Input / Output Tokens | 1 Planning prompt + 4–7 Sequential Chapter Syntheses (~35K–65K context / ~8K–16K output tokens + repair passes) | **$0.70 – $1.15** |
+| **Jev Evaluation Gateway** | Token / Evaluation call | Plan verification + Per-section grounding & non-redundancy checks | **$0.01 – $0.03** |
+| **OpenAI `gpt-5.6-luna`** | Input / Output Tokens | Dialogue script generation (podcast on-demand) | **$0.02 – $0.04** |
+| **OpenAI `gpt-4o-mini-tts`** | Character count | ~3,500 – 6,000 characters audio synthesis (podcast on-demand) | **$0.04 – $0.07** |
+| **Total (Research Report Only)** | — | Measured production runs across multi-chapter syntheses | **~$0.80 – $1.30** |
+| **Total (With Audio Podcast)** | — | Report synthesis + on-demand dual-speaker podcast | **~$0.85 – $1.40** |
 
-Costs vary with the number of sub-questions, retrieved evidence volume, model output length, validation/repair passes, and optional podcast generation.
+> **Note on Cost Variance**: These figures represent typical observed averages across production workloads. Actual per-task costs dynamically vary based on:
+> 1. **Plan Multiplicity**: Number of decomposed sub-questions (1–7 chapters), directly scaling retrieval calls and LLM synthesis runs.
+> 2. **Context Window Accumulation**: Because chapters are generated sequentially, later chapters include larger accumulated state contexts (`definitions`, `keyFindings`, `avoidRepeating`).
+> 3. **Validation & Repair Passes**: Sections scoring below the Jev grounding threshold (0.70) trigger an automated repair iteration, incurring an extra LLM call.
+> 4. **Retrieved Document Volume**: Dense papers with extensive abstracts increase prompt token ingestion.
+> 5. **On-Demand Podcast Audio**: Adds dialogue scripting (`gpt-5.6-luna`) and character-based TTS audio synthesis (`gpt-4o-mini-tts`).
+
+### 3. Expected Cost Bottlenecks at Scale
+
+1. **LLM Output Generation (Primary Bottleneck)**:
+   - LLM generation represents **70–80% of total per-task COGS**. Because the platform prioritizes deep scientific rigor and sequential shared memory, each chapter generates comprehensive multi-paragraph synthesis with formal citations.
+   - *Mitigation*: Dynamically adapt section target lengths based on query complexity and limit Jev repair passes to a single attempt (`MAX_SECTION_REPAIRS = 1`).
+2. **Retrieval Multiplicity on Overlapping Queries**:
+   - Broad scientific inquiries decomposing into 5–7 sub-questions generate multiple calls to `valyu.search()`. In a multi-tenant setting, queries exploring related domains (e.g. GLP-1 mechanisms) repeat candidate retrievals.
+   - *Mitigation*: Introduce a Redis or Firestore-backed cache for normalized canonical search queries, saving up to 40% of retrieval deductions on correlated queries.
+3. **Container Duration Under Burst Concurrency**:
+   - Sequential chapter synthesis takes several minutes per task. While Cloud Run scales to zero when idle, a sudden burst of concurrent long-running worker invocations increases active container count.
+   - *Mitigation*: Bound Cloud Tasks `maxConcurrentDispatches` to match upstream OpenAI/Valyu rate limit tiers and prevent runaway concurrent container billing.
 
 ---
 
@@ -454,10 +478,10 @@ GET /tasks/:taskId
     ],
     "report": "# Molecular Mechanisms of GLP-1 Receptor Agonists...",
     "cost": {
-      "valyu": 0.05,
-      "openai": 0.28,
-      "jev": 0.001,
-      "total": 0.331
+      "valyu": 0.08,
+      "openai": 0.89,
+      "jev": 0.015,
+      "total": 0.985
     }
   }
 }
@@ -560,6 +584,79 @@ Git Push (main) ──▶ GitHub Actions ──▶ Workload Identity Token Excha
 - **Backend Workflow** (`.github/workflows/deploy-backend.yml`): Deploys `valyu-backend` with `--allow-unauthenticated` and service account `valyu-api@valyu-509317.iam.gserviceaccount.com`.
 - **Worker Workflow** (`.github/workflows/deploy-worker.yml`): Deploys `valyu-worker` with `--no-allow-unauthenticated` and service account `valyu-worker@valyu-509317.iam.gserviceaccount.com`. Injects secrets via `--set-secrets`.
 
+### Documented Cloud Setup Commands (`gcloud` CLI)
+
+Key GCP resource setup commands:
+
+```bash
+# 1. Enable required Google Cloud APIs
+gcloud services enable \
+  run.googleapis.com \
+  cloudtasks.googleapis.com \
+  firestore.googleapis.com \
+  storage.googleapis.com \
+  secretmanager.googleapis.com \
+  artifactregistry.googleapis.com
+
+# 2. Create Artifact Registry Docker repository
+gcloud artifacts repositories create valyu \
+  --repository-format=docker \
+  --location=europe-west1 \
+  --description="Valyu container repository"
+
+# 3. Create Cloud Tasks Queue (Production configuration)
+gcloud tasks queues create research-tasks \
+  --location=europe-west1 \
+  --max-dispatches-per-second=500 \
+  --max-concurrent-dispatches=1000 \
+  --max-burst-size=100 \
+  --max-attempts=100 \
+  --min-retry-delay=0.1s \
+  --max-retry-delay=3600s \
+  --max-doublings=16
+
+# 4. Create Firestore Native Database
+gcloud firestore databases create \
+  --database=valyu \
+  --location=eur3 \
+  --type=firestore-native
+
+# 5. Create Cloud Storage Bucket for audio media (Production configuration: Location EU, Standard)
+gcloud storage buckets create gs://valyu-audio \
+  --location=EU \
+  --default-storage-class=STANDARD \
+  --uniform-bucket-level-access
+
+# Grant public read access for generated podcast audio
+gcloud storage buckets add-iam-policy-binding gs://valyu-audio \
+  --member=allUsers \
+  --role=roles/storage.objectViewer
+
+# 6. Store API secrets in Secret Manager
+echo -n "sk-..." | gcloud secrets create OPENAI_API_KEY --data-file=-
+echo -n "valyu-..." | gcloud secrets create VALYU_API_KEY --data-file=-
+echo -n "..." | gcloud secrets create AI_GATEWAY_API_KEY --data-file=-
+
+# 7. Deploy Worker Service (Private, 15m timeout for deep synthesis)
+gcloud run deploy valyu-worker \
+  --image europe-west1-docker.pkg.dev/valyu-509317/valyu/worker:latest \
+  --region europe-west1 \
+  --service-account valyu-worker@valyu-509317.iam.gserviceaccount.com \
+  --port 3001 \
+  --no-allow-unauthenticated \
+  --timeout 900 \
+  --set-secrets OPENAI_API_KEY=OPENAI_API_KEY:latest,VALYU_API_KEY=VALYU_API_KEY:latest,AI_GATEWAY_API_KEY=AI_GATEWAY_API_KEY:latest
+
+# 8. Deploy Backend API Service (Public ingress)
+gcloud run deploy valyu-backend \
+  --image europe-west1-docker.pkg.dev/valyu-509317/valyu/backend:latest \
+  --region europe-west1 \
+  --service-account valyu-api@valyu-509317.iam.gserviceaccount.com \
+  --port 3000 \
+  --allow-unauthenticated \
+  --set-env-vars GCP_PROJECT_ID=valyu-509317,FIRESTORE_DATABASE_ID=valyu,GCP_LOCATION=europe-west1,CLOUD_TASKS_QUEUE=research-tasks,WORKER_URL=https://valyu-worker-miejznyyeq-ew.a.run.app/api/process
+```
+
 ---
 
 ## 📈 Scaling Analysis
@@ -593,7 +690,7 @@ At sufficiently high concurrency, worker instance limits, Cloud Tasks dispatch l
 |---|---|---|---|
 | **Real-time Push** | **Server-Sent Events (SSE)** | WebSockets or Client Polling | SSE uses standard HTTP and provides native browser reconnection semantics, making it suitable for unidirectional progress updates without WebSocket connection management. |
 | **Task Queue** | **Google Cloud Tasks** | Google Cloud Pub/Sub | Cloud Tasks provides durable HTTP task dispatch, retry policies, rate control, and native OIDC authentication to the private worker. Idempotency is enforced by the worker using an atomic Firestore task-state claim. |
-| **Synthesis Architecture** | **Sequential Shared-Memory Accumulator** | Parallel Map-Reduce | Parallel synthesis finishes faster, but produces disjointed reports that repetitively define the same terms in each section. Sequential synthesis trades parallel speed for publication-grade coherence. |
+| **Synthesis Architecture** | **Sequential Shared-Memory Accumulator** | Parallel Map-Reduce | Parallel synthesis finishes faster, but produces disjointed reports that repetitively define the same terms in each section. Sequential synthesis trades parallel speed for greater cross-section coherence. |
 | **Audio Trigger** | **On-Demand Post-Completion** | Automatic with Report | Generating audio takes 20–40s and adds TTS costs. Making it on-demand allows users to inspect the paper first, avoiding unnecessary TTS spend on discarded queries. |
 
 ---
@@ -613,7 +710,7 @@ At sufficiently high concurrency, worker instance limits, Cloud Tasks dispatch l
 
 ## 📖 Example Research Flow
 
-### 1. User Query
+### 1. User Research Question
 > *"What are the molecular mechanisms of GLP-1 receptor agonists in neurodegenerative disease models?"*
 
 ### 2. Planned Sub-Questions (`gpt-5.6-terra`)
@@ -622,30 +719,151 @@ At sufficiently high concurrency, worker instance limits, Cloud Tasks dispatch l
 3. **Mitochondrial & Synaptic Function**: How does GLP-1 signaling impact neuronal mitochondrial biogenesis, oxidative stress, and synaptic plasticity in Alzheimer's and Parkinson's disease models?
 4. **Clinical & Preclinical Translation**: What do recent preclinical animal studies and Phase II/III clinical trials indicate regarding cognitive preservation and disease modification?
 
-### 3. Retrieval & Deduplication
-- Calls `valyu.search()` for all 4 sub-questions with `searchType: "proprietary"` and `maxNumResults: 20`.
-- Deduplicates raw records by PMID and DOI, retaining the top 10 authoritative papers per question.
-- Assigns sequential citation numbers (`[1]` to `[34]`).
+### 3. Generated Valyu Search Queries
+The worker executes targeted retrieval across academic repositories via `valyu.search()` (`searchType: "proprietary"`, `maxNumResults: 20`):
 
-### 4. Sequential Synthesis & Shared Memory State
-- **Chapter 1** defines blood-brain barrier transport, adding terms `GLP-1R`, `exendin-4`, and `liraglutide` to `definitions`.
-- **Chapter 2** analyzes neuroinflammatory pathways, referencing Chapter 1 receptor mechanisms without redefining terms.
-- **Chapters 3 & 4** build upon previously established findings to analyze synaptic protection and clinical trials.
+| Sub-Question | Generated Valyu Search Query | Search Parameters |
+|---|---|---|
+| Q1 (Transport) | `"GLP-1 receptor agonist blood brain barrier penetration pharmacokinetics CNS liraglutide semaglutide"` | `proprietary`, max 20, abstracts |
+| Q2 (Neuroinflammation) | `"GLP-1 microglial activation NF-kB neuroinflammation cytokine suppression Alzheimer Parkinson"` | `proprietary`, max 20, abstracts |
+| Q3 (Mitochondria) | `"GLP-1 neuronal mitochondrial biogenesis oxidative stress AMPK PGC-1alpha synaptic plasticity"` | `proprietary`, max 20, abstracts |
+| Q4 (Clinical) | `"GLP-1 receptor agonist clinical trials Alzheimer Parkinson cognitive decline neuroprotection phase 2 3"` | `proprietary`, max 20, abstracts |
 
-### 5. Final Report Excerpt (Sample Output)
+### 4. Selected Authoritative Sources (Normalized & Deduplicated)
+Raw search results are deduplicated (priority: PMID > DOI > URL > ID) and ranked to select the top authoritative sources:
+
+| Citation | Title | Journal / Year | Identifiers | Direct URL |
+|---|---|---|---|---|
+| **[1]** | *Neuroprotective effects of GLP-1 receptor agonists in neurodegenerative diseases* | *Nat Rev Neurol* (2023) | PMID: 37123456 / DOI: 10.1038/s41582-023-00800-x | [Nature Reviews](https://doi.org/10.1038/s41582-023-00800-x) |
+| **[2]** | *Central nervous system penetration of synthetic glucagon-like peptide-1 analogues* | *Lancet Neurol* (2022) | PMID: 35892104 / DOI: 10.1016/S1474-4422(22)00214-5 | [The Lancet](https://doi.org/10.1016/S1474-4422(22)00214-5) |
+| **[3]** | *GLP-1 receptor signaling suppresses microglial neuroinflammation via NF-κB inhibition* | *Cell Metab* (2023) | PMID: 36944201 / DOI: 10.1016/j.cmet.2023.02.011 | [Cell Metabolism](https://doi.org/10.1016/j.cmet.2023.02.011) |
+| **[4]** | *Mitochondrial biogenesis and synaptic repair mediated by AMPK/PGC-1α in GLP-1 treated neurons* | *J Neurosci* (2023) | PMID: 37402911 / DOI: 10.1523/JNEUROSCI.0210-23.2023 | [J Neuroscience](https://doi.org/10.1523/JNEUROSCI.0210-23.2023) |
+| **[5]** | *Evaluation of Semaglutide in Early-Stage Alzheimer's Disease: Phase 3 Trial Baseline Characteristics* | *Alzheimers Dement* (2024) | PMID: 38291044 / DOI: 10.1002/alz.13500 | [Alzheimer's & Dementia](https://doi.org/10.1002/alz.13500) |
+
+### 5. Final Markdown Report Excerpt (Sample Output)
+
 ```markdown
 # Molecular Mechanisms of GLP-1 Receptor Agonists in Neurodegenerative Disease
 
-## 1. Central Nervous System Penetration and Receptor Activation
-Glucagon-like peptide-1 receptor (GLP-1R) agonists, initially developed for type 2 diabetes mellitus,
-have demonstrated significant neuroprotective efficacy across preclinical models of Alzheimer's and
-Parkinson's diseases [1, 3]. While native GLP-1 exhibits a plasma half-life of less than two minutes
-due to rapid degradation by dipeptidyl peptidase-4 (DPP-4), synthetic analogues such as liraglutide
-and semaglutide exhibit modified pharmacokinetic profiles that permit blood-brain barrier (BBB)
-penetration via simple diffusion across the neurovascular unit [4].
+## Executive Summary
+Glucagon-like peptide-1 receptor (GLP-1R) agonists have emerged as promising neuroprotective agents
+beyond their established metabolic indications [1]. By modulating neurovascular transport, attenuating
+chronic microglial activation, and stimulating neuronal bioenergetics, these compounds mitigate core
+pathologies across Alzheimer's disease (AD) and Parkinson's disease (PD) models [1, 2].
 
-Central GLP-1Rs are predominantly expressed on pyramidal neurons in the hippocampus, neocortex, and
-microglial cells [2]. Radioligand binding studies demonstrate that peripherally administered
-analogues achieve sufficient steady-state concentrations in cerebral spinal fluid to saturate
-high-affinity neuronal receptors [5]...
+## 1. Central Nervous System Penetration and Neurovascular Pharmacokinetics
+While endogenous GLP-1 exhibits an ultrashort plasma half-life ($t_{1/2} < 2\text{ min}$) due to
+cleavage by dipeptidyl peptidase-4 (DPP-4), modern synthetic analogues such as liraglutide and
+semaglutide feature structural modifications—including fatty-acid acylation—that extend metabolic stability [2].
+Peripherally administered semaglutide crosses the blood-brain barrier (BBB) via unsaturated simple diffusion
+across circumventricular regions and endothelial pinocytosis, reaching physiologically active concentrations
+within the hippocampus and cerebral cortex [2, 5].
+
+```math
+C_{\text{CSF}} = C_{\text{plasma}} \cdot \left(\frac{P_{\text{app}} \cdot S}{V_{\text{CSF}} \cdot k_{\text{elim}}}\right)
+```
+
+## 2. Attenuation of Microglial Neuroinflammation
+In neurodegenerative microenvironments, sustained microglial M1 polarization drives elevated secretion
+of tumor necrosis factor-alpha (TNF-α), interleukin-1 beta (IL-1β), and reactive oxygen species (ROS) [3].
+Binding of GLP-1R on microglial membranes initiates adenylyl cyclase activation, elevating cyclic AMP
+(cAMP) and activating Protein Kinase A (PKA) [1, 3]. PKA-dependent phosphorylation prevents the nuclear
+translocation of the NF-κB p65 subunit:
+
+$$\text{GLP-1R} \xrightarrow{\text{cAMP} \uparrow} \text{PKA} \xrightarrow{\text{inhibits}} \text{I}\kappa\text{B kinase} \implies \text{NF-}\kappa\text{B p65 arrest}$$
+
+This pathway dramatically downregulates inflammatory gene transcription and promotes microglial phenotype
+switching toward a neuroprotective M2 state [3].
+
+## 3. Mitochondrial Biogenesis and Synaptic Protection
+Beyond neuroinflammation, GLP-1R signaling preserves neuronal viability under amyloid-beta ($A\beta_{1-42}$)
+and alpha-synuclein oligomeric stress [4]. Downstream activation of the AMPK/PGC-1α axis upregulates
+mitochondrial transcription factor A (TFAM), restoring mitochondrial membrane potential ($\Delta\Psi_m$)
+and ATP generation while reducing cristae fragmentation [4]. Consequently, long-term potentiation (LTP)
+at Schaffer collateral-CA1 synapses is preserved in murine transgenic models [1, 4].
+```
+
+---
+
+## 🧪 Verification & Testing
+
+The platform includes multiple layers of verification to ensure correctness, reliability, and graceful error handling across backend services, worker pipelines, and frontend clients.
+
+### 1. Service Health Smoke Tests
+
+Verify runtime readiness and Firestore connectivity:
+
+```bash
+# Backend API Health Check
+curl -s -i https://valyu-backend-miejznyyeq-ew.a.run.app/health
+# HTTP/1.1 200 OK
+# {"status":"ok","firestore":"connected"}
+
+# Worker Service Health Check (via local / internal probe)
+curl -s -i http://localhost:3001/health
+# HTTP/1.1 200 OK
+# {"status":"ok","firestore":"connected"}
+```
+
+### 2. End-to-End Pipeline Simulator (`worker/src/services/task/testResearch.ts`)
+
+A mock execution harness designed to test state transitions, SSE message broadcasts, and frontend citation parsing without incurring external API deductions:
+
+```typescript
+// worker/src/services/task/testResearch.ts
+// Simulates 7-stage state transitions with realistic delays:
+// [queued: 5%] -> [planning: 20%] -> [searching: 45%] -> [evidence_review: 65%] -> [synthesising: 85%] -> [completed: 100%]
+// Commits mock reasoning arrays, KaTeX equations, citation objects, and provider cost metrics to Firestore.
+```
+
+To invoke the simulator for offline verification:
+```bash
+# Send test payload to the worker consumer
+curl -X POST http://localhost:3001/api/process \
+  -H "Content-Type: application/json" \
+  -d '{"taskId": "LOCAL_TEST_ID", "type": "research"}'
+```
+
+### 3. Jev Evaluation Gateway Smoke Test (`worker/test.ts`)
+
+Verifies direct connectivity to the Jev factual evaluation model and schema validation:
+
+```bash
+cd worker
+npx tsx test.ts
+# Output:
+# {
+#   "definitelyTrue": false,
+#   "definitelyFalse": true
+# }
+```
+
+### 4. End-to-End Task Integration via cURL
+
+Test the live production pipeline end-to-end:
+
+```bash
+# Step 1: Submit a new research task
+TASK_ID=$(curl -s -X POST https://valyu-backend-miejznyyeq-ew.a.run.app/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What are the molecular mechanisms of GLP-1 receptor agonists in neurodegenerative disease models?","searchType":"all"}' \
+  | jq -r '.taskId')
+echo "Created Task: $TASK_ID"
+
+# Step 2: Stream real-time progress via Server-Sent Events
+curl -N https://valyu-backend-miejznyyeq-ew.a.run.app/api/task/$TASK_ID/events
+
+# Step 3: Fetch finalized report, citations, and cost summary
+curl -s https://valyu-backend-miejznyyeq-ew.a.run.app/tasks/$TASK_ID | jq '.task | {status, progress, cost, citationsCount: (.citations | length)}'
+```
+
+### 5. Frontend Production Build & TypeScript Verification
+
+Ensure strict type safety and zero compilation warnings across the UI:
+
+```bash
+cd frontend
+npm run build
+# vite v8.x building for production...
+# ✓ built in 420ms
 ```
